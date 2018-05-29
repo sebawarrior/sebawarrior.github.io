@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+       #map {
+        height: 400px;
+        width: 100%;
+       }
+    </style>
+  </head>
+
+  <body>
+    <h3>My Google Maps Demo</h3>
+    <div id="map"></div>
+    <!-- <script src="https://cdn.socket.io/socket.io-1.2.0.js"></script> -->
+
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.1.1/socket.io.js"></script>
+    <script>
+      var lista_de_airports = [];
+      var lista_de_flight = [];
+      var lista_de_posiciones = [];
+      var socket = io('wss://integracion-tarea-3.herokuapp.com', {path:'/flights'});
+      var map = false;
+      var prev_infowindow =false;
+      var lista_markers = [];
+      var lista_markers_aviones = [];
+      var i = 0;
+      var info = false;
+      var marker = false;
+      var prev_marker = false;
+      var avion = 'https://maps.google.com/mapfiles/kml/pal2/icon56.png';
+
+      function asociar_ventana_avion(marker, vuelo, data){
+        var infowindow = new google.maps.InfoWindow({
+          content: '<div id="content">'+
+        '<div id="siteNotice">'+
+        '</div>'+
+        '<h1 id="firstHeading" class="firstHeading">'+ vuelo["code"] + '</h1>'+
+        '<div id="bodyContent">'+
+        '<p> Airline:'+  vuelo["airline"]+ '</p>'+
+        '<p> Destination:'+ vuelo["destination"]["name"] + ", " + vuelo["destination"]["city"]+ ", " +
+         vuelo["destination"]["country"] + '</p>'+
+        '<p> Origin:'+ vuelo["origin"]["name"] + ", " + vuelo["origin"]["city"]+ ", " +
+         vuelo["origin"]["country"] +'</p>'+
+        '<p> Plane:'+ vuelo["plane"] +'</p>'+
+        '<p> Seats:'+ vuelo["seats"] +'</p>'+
+        '<p> Plane_position:'+ data["position"] +'</p>'+
+        '</div>'+
+        '</div>'
+          });
+
+        marker.addListener('click', function() {
+          if (prev_infowindow) {
+             prev_infowindow.close();
+          }
+          prev_infowindow = infowindow
+          infowindow.open(marker.get('map'), marker);
+        });
+      };
+
+      function generar_marker_avion(data, avion, prev_marker){
+        if (prev_marker)
+        {
+          prev_marker.setMap(null);
+        }
+        var marker = new google.maps.Marker({
+          position: {lat:data["position"][0], lng:data["position"][1] },
+          map: map,
+          icon: avion
+        });
+        prev_marker = marker;
+        return marker;
+
+
+      }
+
+      function asociar_contenido_ventana(marker, airport) {
+        var infowindow = new google.maps.InfoWindow({
+          content: '<div id="content">'+
+        '<div id="siteNotice">'+
+        '</div>'+
+        '<h1 id="firstHeading" class="firstHeading">'+ airport["name"] + '</h1>'+
+        '<div id="bodyContent">'+
+        '<p> City:'+  airport["city"]+ '</p>'+
+        '<p> Country:'+ airport["country"] +'</p>'+
+        '<p> Country_code:'+ airport["country_code"] +'</p>'+
+        '<p> Airport_code:'+ airport["airport_code"] +'</p>'+
+        '<p> Airport_position:'+ airport["airport_position"] +'</p>'+
+        '</div>'+
+        '</div>'
+        });
+
+        marker.addListener('click', function() {
+          if (prev_infowindow) {
+             prev_infowindow.close();
+          }
+          prev_infowindow = infowindow
+          infowindow.open(marker.get('map'), marker);
+        });
+      };
+
+      socket.emit('AIRPORTS');
+      socket.on('AIRPORTS', function(data){
+        for (airport in data)
+        {
+          lista_de_airports.push(airport);
+
+          if (map == false)
+          {
+              map = new google.maps.Map(document.getElementById('map'), {
+              zoom: 4,
+              center: {lat:data[airport]["airport_position"][0], lng:data[airport]["airport_position"][1] }
+            });
+          }
+          var marker = new google.maps.Marker({
+            position: {lat:data[airport]["airport_position"][0], lng:data[airport]["airport_position"][1] },
+            map: map
+          });
+          lista_markers.push(marker);
+          //console.log(data[airport]);
+          asociar_contenido_ventana(marker,data[airport]);
+        };
+
+      });
+
+      socket.emit('FLIGHTS');
+      socket.on('FLIGHTS', function(data){
+        console.log(data);
+        for(vuelos of data)
+        {
+          lista_de_flight.push({code:vuelos["code"], airline:vuelos["airline"], destination:vuelos["destination"],
+          origin:vuelos["origin"], plane:vuelos["origin"], seats:vuelos["seats"]});
+          lista_markers.push(new google.maps.Marker({
+            position: {lat:0, lng:0 },
+            map: map,
+            icon: avion,
+            title: vuelos["code"]}));
+          //console.log(lista_de_flight);
+          var lineSymbol = {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW
+          };
+          var line = new google.maps.Polyline({
+            path: [{lat: vuelos["origin"]["airport_position"][0], lng: vuelos["origin"]["airport_position"][1]}, {lat: vuelos["destination"]["airport_position"][0], lng: vuelos["destination"]["airport_position"][1]}],
+            icons: [{
+              icon: lineSymbol,
+              offset: '100%'
+            }],
+            map: map
+          });
+        }
+        //console.log(data);
+      });
+      console.log("aca estan los markers iniciales");
+      console.log(lista_markers);
+
+      socket.on('POSITION', function(data){
+        //console.log(lista_markers_aviones);
+        var cityCircle = new google.maps.Circle({
+          strokeColor: '#FF0000',
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: '#FF0000',
+          fillOpacity: 0.35,
+          map: map,
+          center: {lat:data["position"][0], lng:data["position"][1]},
+          radius: 10000
+        });
+
+        for (m of lista_markers)
+        {
+          if (m.getTitle() == data["code"])
+          {
+            m.setMap(null);
+            var marker = new google.maps.Marker({
+              position: {lat:data["position"][0], lng:data["position"][1]},
+              map: map,
+              icon: avion,
+              title: data["code"]
+            });
+            lista_markers[i] = marker;
+            for (elemento of lista_de_flight)
+            {
+              if (elemento["code"] == data["code"])
+              {
+                asociar_ventana_avion(marker, elemento, data);
+              }
+            }
+          }
+          i = i+1;
+        }
+        i = 0;
+      });
+        /**
+        var marker = new google.maps.Marker({
+          position: {lat:data["position"][0], lng:data["position"][1] },
+          map: map,
+          icon: avion,
+          title: data["code"]
+        });
+        */
+
+/**
+        prev_marker = marker;
+
+        for (elemento of lista_de_flight)
+        {
+          //asociar_ventana_avion(prev_marker, elemento, data);
+          if (elemento["code"] == data["code"])
+          {
+            asociar_ventana_avion(prev_marker, elemento, data);
+          }
+        }
+      });
+*/
+
+      function initMap() {
+        var airports = {
+          "SCL":{
+            "name":"Aeropuerto Internacional Comodoro Arturo Merino Benítez",
+            "city":"Santiago",
+            "country":"Chile",
+            "country_code":"CL",
+            "airport_code":"SCL",
+            "airport_position":[-33.382761,-70.803203]},
+
+          "EZE":{
+            "name":"Aeropuerto Internacional Ministro Pistarini",
+            "city":"Buenos Aires",
+            "country":"Argentina",
+            "country_code":"AR",
+            "airport_code":"EZE",
+            "airport_position":[-34.82264,-58.533321]
+          }
+        }
+        var flights = [{
+          "code":"INT470",
+          "airline":"INTEGRA",
+          "origin":{
+            "name":"Aeropuerto Internacional Comodoro Arturo Merino Benítez",
+            "city":"Santiago",
+            "country":"Chile",
+            "country_code":"CL",
+            "airport_code":"SCL",
+            "airport_position":[-33.382761,-70.803203]},
+          "destination":{
+            "name":"Aeropuerto Internacional Ministro Pistarini",
+            "city":"Buenos Aires",
+            "country":"Argentina",
+            "country_code":"AR",
+            "airport_code":"EZE",
+            "airport_position":[-34.82264,-58.533321]},
+          "plane":"Airbus A320","seats":210},
+          {
+            "code":"INT471",
+            "airline":"INTEGRA",
+            "origin":{
+              "name":"Aeropuerto Internacional Ministro Pistarini",
+              "city":"Buenos Aires",
+              "country":"Argentina",
+              "country_code":"AR",
+              "airport_code":"EZE",
+              "airport_position":[-34.82264,-58.533321]},
+            "destination":{
+              "name":"Aeropuerto Internacional Comodoro Arturo Merino Benítez",
+              "city":"Santiago",
+              "country":"Chile",
+              "country_code":"CL",
+              "airport_code":"SCL",
+              "airport_position":[-33.382761,-70.803203]},
+            "plane":"Airbus A320",
+            "seats":220}]
+        var lista_posicion = [{
+          "code":"INT471",
+          "position":[-33.407958882500004,-70.588480065]}]
+
+        var puerto_origen = airports["SCL"]
+        var puerto_destino = airports["EZE"]
+
+        var origen = '<div id="content">'+
+      '<div id="siteNotice">'+
+      '</div>'+
+      '<h1 id="firstHeading" class="firstHeading">'+ puerto_origen["name"] + '</h1>'+
+      '<div id="bodyContent">'+
+      '<p> City:'+ puerto_origen["city"]+ '</p>'+
+      '<p> Country:'+ puerto_origen["country"] +'</p>'+
+      '<p> Country_code:'+ puerto_origen["country_code"] +'</p>'+
+      '<p> Airport_code:'+ puerto_origen["airport_code"] +'</p>'+
+      '<p> Airport_position:'+ puerto_origen["airport_position"] +'</p>'+
+      '</div>'+
+      '</div>';
+
+        var destino = '<div id="content">'+
+      '<div id="siteNotice">'+
+      '</div>'+
+      '<h1 id="firstHeading" class="firstHeading">'+ puerto_destino["name"] + '</h1>'+
+      '<div id="bodyContent">'+
+      '<p> City:'+ puerto_destino["city"]+ '</p>'+
+      '<p> Country:'+ puerto_destino["country"] +'</p>'+
+      '<p> Country_code:'+ puerto_destino["country_code"] +'</p>'+
+      '<p> Airport_code:'+ puerto_destino["airport_code"] +'</p>'+
+      '<p> Airport_position:'+ puerto_destino["airport_position"] +'</p>'+
+      '</div>'+
+      '</div>';
+
+
+        //Generamos las coordenadas de origen y destino
+        var coordenadas_origen = {lat: flights[0]["origin"]["airport_position"][0], lng: flights[0]["origin"]["airport_position"][1]};
+        var coordenadas_destino = {lat: flights[0]["destination"]["airport_position"][0], lng: flights[0]["destination"]["airport_position"][1]};
+
+        //Generamos el mapa y lo centramos en la coordenada de origen
+        /**
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 4,
+          center: coordenadas_origen
+        });
+
+        //Generamos marcador de origen
+        var marker_origen = new google.maps.Marker({
+          position: coordenadas_origen,
+          map: map
+        });
+
+        //Generamos marcador de destino
+        var marker_destino = new google.maps.Marker({
+          position: coordenadas_destino,
+          map: map
+        });
+
+        //Generamos caja de información para marcador de origen
+        var info = new google.maps.InfoWindow({
+          content: origen
+          });
+
+          var lineSymbol = {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW
+          };
+
+        // Generamos la línea teórica.
+        var line = new google.maps.Polyline({
+          path: [{lat: flights[0]["origin"]["airport_position"][0], lng: flights[0]["origin"]["airport_position"][1]}, {lat: flights[1]["origin"]["airport_position"][0], lng: flights[1]["origin"]["airport_position"][1]}],
+          icons: [{
+            icon: lineSymbol,
+            offset: '100%'
+          }],
+          map: map
+        });
+
+        var prev_infowindow =false;
+
+        marker_origen.addListener('click', function() {
+          var info = new google.maps.InfoWindow({
+            content: origen
+          });
+          if (prev_infowindow) {
+             prev_infowindow.close();
+          }
+          prev_infowindow = info
+          info.open(map, marker_origen);
+        });
+
+        marker_destino.addListener('click', function(){
+          var info = new google.maps.InfoWindow({
+            content: destino
+          });
+          if (prev_infowindow) {
+             prev_infowindow.close();
+          }
+          prev_infowindow = info
+          info.open(map, marker_destino);
+        });
+        */
+
+        //Generamos caja de información para marcador de origen
+      }
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA62G19ybj9lfM1HM9MLJ6xLCG5zAj1QSI&callback=initMap">
+    </script>
+  </body>
+</html>
